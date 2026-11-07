@@ -63,6 +63,8 @@ class ControlModeTests(unittest.TestCase):
             ["winget", "install", "Nvidia.CUDA"],
             [sys.executable, str(self.home / "evil.py")],                 # a script outside the bundled tools
             [sys.executable, str(ROOT / "setup.py"), "--build"],
+            [sys.executable, str(ROOT / "metal" / "setup_mac.py")],       # the source Mac installer is not a bundled tool
+            [sys.executable, str(ROOT / "metal" / "tools" / "gen_stubs.py")],  # same folder as the repack, not shipped
             [sys.executable],
         ):
             with self.subTest(refused=refused), mock.patch.object(S.subprocess, "run", side_effect=AssertionError("ran")):
@@ -72,6 +74,22 @@ class ControlModeTests(unittest.TestCase):
         with mock.patch.object(S.subprocess, "run", return_value=done) as runner:
             S.run([sys.executable, str(tool), "--help"], check=False)
         runner.assert_called_once()
+
+    def test_the_bundled_mac_preparation_tools_may_run(self):
+        """mac_control_setup runs metal/tools/metal_repack.py and stream_experts.py by path. Both ship
+        (packaging.INSTALLER_METAL_TOOLS). A parent-directory check that stops at tools/ refuses them."""
+        sys.path.insert(0, str(ROOT / "packaging"))
+        import package_terminal as pt
+        S = self.S
+        self.assertEqual(pt.INSTALLER_METAL_TOOLS, ("metal_repack", "stream_experts"))
+        done = subprocess.CompletedProcess([], 0)
+        for name in pt.INSTALLER_METAL_TOOLS:
+            tool = S.mac_tools_dir() / f"{name}.py"
+            self.assertTrue(tool.is_file(), name)
+            with self.subTest(tool=name), mock.patch.object(S.subprocess, "run", return_value=done) as runner:
+                S.run([sys.executable, str(tool), "--help"], check=False)
+                runner.assert_called_once()
+                self.assertEqual(Path(runner.call_args[0][0][1]).name, f"{name}.py")
 
     def test_no_package_is_installed(self):
         S = self.S
