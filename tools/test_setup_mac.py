@@ -254,6 +254,19 @@ class HandOver(unittest.TestCase):
         self.assertTrue(cmd[1].endswith(str(Path("metal") / "setup_mac.py")))
         self.assertEqual(cmd[2:], ["--model", "Q2_0", "--yes"])
 
+    def test_a_bundle_without_setup_mac_stops_before_exec(self):
+        """The Terminal bundle and the app ship metal/tools only. setup.py must not exec a missing metal/setup_mac.py."""
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(setup, "ROOT", Path(d)), \
+                    mock.patch.object(setup.subprocess, "call", return_value=2) as call, \
+                    mock.patch.object(setup, "say") as say:
+                code = setup.mac_setup(["--model", "Q2_0"])
+        self.assertEqual(code, 1)
+        call.assert_not_called()
+        text = " ".join(" ".join(str(a) for a in c.args) for c in say.call_args_list)
+        self.assertIn("setup_mac.py", text)
+        self.assertIn("Control", text)
+
     def test_other_platforms_never_reach_it(self):
         src = (ROOT / "setup.py").read_text(encoding="utf-8")
         self.assertIn('if sys.platform == "darwin":', src)
@@ -598,6 +611,10 @@ class MacAppUnsloth(unittest.TestCase):
             out = pt.add_installer(Path(t))
             self.assertIn("metal/tools/metal_repack.py", out["files"])
             self.assertTrue((Path(t) / "metal" / "tools" / "stream_experts.py").is_file())
+            staged = (Path(t) / "setup.py").read_text(encoding="utf-8")
+            self.assertIn('_CONTROL_METAL_TOOLS = ("metal_repack.py", "stream_experts.py")', staged)
+            self.assertFalse((Path(t) / "metal" / "setup_mac.py").exists())
+            self.assertFalse((Path(t) / "metal" / "tools" / "gen_stubs.py").exists())
 
 
 class UpdateFlow(unittest.TestCase):

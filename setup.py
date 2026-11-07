@@ -1124,13 +1124,26 @@ def _urlopen(req, timeout=None):
         raise
 
 
+# packaging/package_terminal.py INSTALLER_METAL_TOOLS. The bundle ships these two and runs them by path
+# (mac_repack, mac_experts_file). metal/setup_mac.py and the other files in metal/tools/ stay refused.
+_CONTROL_METAL_TOOLS = ("metal_repack.py", "stream_experts.py")
+
+
+def control_bundled_tool(script: str) -> bool:
+    """True when `script` is one Python file the desktop installer is allowed to run."""
+    path = Path(script).resolve()
+    if path.parent in ((ROOT / "tools").resolve(), (ROOT / "tools" / "dsv41").resolve()):
+        return True
+    return path.parent == mac_tools_dir().resolve() and path.name in _CONTROL_METAL_TOOLS
+
+
 def run(cmd, cwd=None, env=None, check=True, quiet=False):
     """An install, build or preparation step (pip, cmake, a package manager, tools/*.py): never part of a start."""
     acquisition.require("an install or build step (" + Path(str(cmd[0])).name + ")")
     if CONTROL:                                        # the app: only this Python running a bundled tool
         argv = [str(c) for c in cmd]
         if len(argv) < 2 or os.path.normcase(argv[0]) != os.path.normcase(sys.executable) or argv[1] == "-m" or \
-                Path(argv[1]).resolve().parent not in ((ROOT / "tools").resolve(), (ROOT / "tools" / "dsv41").resolve()):
+                not control_bundled_tool(argv[1]):
             raise acquisition.AcquisitionRefused("the desktop app's installer only runs its bundled preparation tools; "
                                                  + " ".join(argv[:2]))
     gguf_py = (env or {}).get("STRATA_GGUF_PY")
@@ -8186,8 +8199,15 @@ def resolve_rope(ctx: int, scaling, scale, trained: int = 262144):
 def mac_setup(argv) -> int:
     """A Mac (Apple Silicon): the Metal engine, built from source on the Mac by metal/setup_mac.py (its own steps:
     the Mac check, the pack by unified memory, the engine build, the Metal defaults). Nothing of the CUDA / HIP paths
-    is used or changed."""
-    return subprocess.call([sys.executable, str(ROOT / "metal" / "setup_mac.py"), *argv])
+    is used or changed. The app and the Terminal bundle do not ship that file; they prepare models in Control mode."""
+    script = ROOT / "metal" / "setup_mac.py"
+    if not script.is_file():
+        say()
+        say("  This copy has no metal/setup_mac.py, so it cannot build the Metal engine from source.")
+        say("  The desktop app and `strata launch` prepare a model in Control mode and do not use that file.")
+        say("  A full source checkout has it; ./setup.sh there builds the engine.")
+        return 1
+    return subprocess.call([sys.executable, str(script), *argv])
 
 
 def sycl_setup(argv) -> int:
